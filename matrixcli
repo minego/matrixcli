@@ -40,6 +40,9 @@ def get_parser():
     parser.add_argument("-q", "--quiet", dest="quiet",
                              action="store_true",
                             help="do not display notifications")
+    parser.add_argument("-b", "--bell", dest="bell",
+                             action="store_true",
+                            help="trigger the system bell on any activity")
 
     parser_send = subparsers.add_parser('send', help='send something to a room')
     group = parser_send.add_mutually_exclusive_group()
@@ -115,6 +118,11 @@ def load_config():
             config.ignore_rooms
         except AttributeError:
             config.ignore_rooms = []
+
+        try:
+            config.notify_on
+        except AttributeError:
+            config.notify_on = None
 
     except FileNotFoundError:
         print("WARNING: config file does not exist", flush=True)
@@ -244,7 +252,22 @@ def str_event(event):
 
     return show, room_name, sender_name, avatar_url, content
 
-def maybe_notify(title, content,avatar_url):
+def maybe_notify(title, content, avatar_url):
+    if args.bell:
+        print("\a")
+
+    if config.notify_on:
+        found = False
+        for value in config.notify_on:
+            if value.lower() in content.lower():
+                found = True
+
+        if not found:
+            return
+
+    if args.quiet:
+        return
+
     """if the system is running headless or any problem happened with system notifications don't complain """
     try:
         if avatar_url:
@@ -290,19 +313,20 @@ def listen_callback(event):
     if event["sender"] != client.user_id:
         show, room_name, sender_name, avatar_url, content = str_event(event)
         if show:
+            title = (sender_name if room_name == "" else sender_name + " in " + room_name) + ":"
+            maybe_notify(title, content, avatar_url)
+
             sender_name = color(sender_name)
             title = (sender_name if room_name == "" else sender_name + " in " + room_name) + ":"
-            if not args.quiet:
-                maybe_notify(title, content, avatar_url)
             print(title, content, flush=True)
 
 def on_message(room, event):
     if event["sender"] != client.user_id:
         show, room_name, sender_name, avatar_url, content = str_event(event)
         if show:
+            maybe_notify(sender_name, content, avatar_url)
+
             sender_name = color(sender_name)
-            if not args.quiet:
-                maybe_notify(sender_name, content, avatar_url)
             print(sender_name + ":", content, flush=True)
 
 def choose_room():
