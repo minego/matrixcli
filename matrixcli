@@ -7,6 +7,7 @@ import importlib.util
 import urllib.request
 import tempfile
 import matrix_client.errors
+import json
 from time import sleep
 from matrix_client.client import MatrixClient
 from matrix_client.api import MatrixHttpApi
@@ -195,10 +196,13 @@ def str_event(event):
     arguments:
         event -- dictionary containing the api event response
     returns a tuple of:
+        show (True if this event should be shown)
         room_name (empty string if its a direct chat)
         sender_name -- sender name
         content -- content representation
     '''
+    show = True
+    content = ''
     room = client.rooms[event['room_id']]
     if len(room.get_joined_members()) > 2:
         room_name = "(" + room.display_name + ") "
@@ -213,16 +217,32 @@ def str_event(event):
         except:
             listen_handler()
 
-    if event['type'] == "m.room.message":
-        if event['content']['msgtype'] == "m.text":
-            content = event['content']['body']
-        else :
-            download_url = api.get_download_url(event['content']['url'])
-            content = download_url
-    else:
-        content =  "\n{{ " + event['type'] +  " event }}\n"
+    try:
+        if 'redacted_because' in event:
+            show = False
+        elif event['type'] == "m.room.message":
+            if event['content']['msgtype'] == "m.text":
+                content = event['content']['body']
+            else :
+                download_url = api.get_download_url(event['content']['url'])
+                content = download_url
+        elif event['type'] == "m.room.member":
+            if event['content']['membership'] == "join":
+                content = '<joined room>'
+            elif event['content']['membership'] == "leave":
+                content = '<left room>'
+            else:
+                content = event['content']['membership']
+        elif event['type'] == "m.reaction":
+            content = '<reaction> ' + event['content']['m.relates_to']['key']
+        else:
+            content =  "\n{{ " + event['type'] +  " event }}\n"
+            # content = json.dumps(event)
+    except:
+        print("Failed to parse event: " + json.dumps(event))
+        raise
 
-    return room_name, sender_name, avatar_url, content
+    return show, room_name, sender_name, avatar_url, content
 
 def maybe_notify(title, content,avatar_url):
     """if the system is running headless or any problem happened with system notifications don't complain """
@@ -243,18 +263,20 @@ def listen_handler(e):
 
 def listen_callback(event):
     if event["sender"] != client.user_id:
-        room_name, sender_name, avatar_url, content = str_event(event)
-        title = (sender_name if room_name == "" else sender_name + " in " + room_name) + ":"
-        if not args.quiet:
-            maybe_notify(title, content, avatar_url)
-        print(title, content, flush=True)
+        show, room_name, sender_name, avatar_url, content = str_event(event)
+        if show:
+            title = (sender_name if room_name == "" else sender_name + " in " + room_name) + ":"
+            if not args.quiet:
+                maybe_notify(title, content, avatar_url)
+            print(title, content, flush=True)
 
 def on_message(room, event):
     if event["sender"] != client.user_id:
-        room_name, sender_name, avatar_url, content = str_event(event)
-        if not args.quiet:
-            maybe_notify(sender_name, content, avatar_url)
-        print(sender_name + ":", content, flush=True)
+        show, room_name, sender_name, avatar_url, content = str_event(event)
+        if show:
+            if not args.quiet:
+                maybe_notify(sender_name, content, avatar_url)
+            print(sender_name + ":", content, flush=True)
 
 def choose_room():
     """ prompts the user to choose a room from his joined rooms and returns the room_id """
@@ -308,8 +330,9 @@ def tail():
     if args.messages_number > 10 :
         room.backfill_previous_messages(limit=args.messages_number-10)
     for event in room.events[-1*args.messages_number:]:
-        room_name, sender_name, avatar_url, content = str_event(event)
-        print(sender_name + ":", content, flush=True)
+        show, room_name, sender_name, avatar_url, content = str_event(event)
+        if show:
+            print(sender_name + ":", content, flush=True)
     if args.follow :
         room.add_listener(on_message)
         client.start_listener_thread(exception_handler=listen_handler)
