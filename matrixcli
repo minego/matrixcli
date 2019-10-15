@@ -37,6 +37,9 @@ def get_parser():
 
     parser.add_argument("-c", "--config", dest="config",
                         help="custom configuration file")
+    parser.add_argument("-q", "--quiet", dest="quiet",
+                             action="store_true",
+                            help="do not display notifications")
 
     parser_send = subparsers.add_parser('send', help='send something to a room')
     group = parser_send.add_mutually_exclusive_group()
@@ -80,9 +83,6 @@ def get_parser():
     parser_tail.add_argument("-f", "--follow", dest="follow",
                              action="store_true",
                             help="wait for messages and print them as they come")
-    parser_tail.add_argument("-q", "--quiet", dest="quiet",
-                             action="store_true",
-                            help="do not display notifications")
     parser_tail.add_argument("-n", "--messages", dest="messages_number", default=10,
                              type=int, choices=range(1, 100), metavar="[1-100]",
                              help='print the last specified messages')
